@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>⚓ 기욱 지식왕 퀴즈</title>
+  <!--
+    DEV NOTE / GOAL (이 파일 상단 주석은 프로젝트의 의도를 명확히 하기 위한 것입니다)
+    - 목적: 기욱에 대한 퀴즈를 풀고, 점수에 따라 "기욱이 직접 한 줄 대사"로 결과를 말해준다.
+    - 비목표: 장문 서사 엔딩, 계정/서버 로그인, 복잡한 데이터 저장.
+    - 옵션: 시작/엔딩 이미지, 점수대별 음성 재생은 선택 사항.
+    - AI 사용(선택): USE_AI가 true일 때만, LORE를 기반으로 짧은 1~2문장 멘트를 생성하도록 한다.
+  -->
+  <style>
+    :root{ --bg:#0f172a; --card:#1e293b; --text:#e5e7eb; --muted:#94a3b8; --primary:#22d3ee; --accent:#7c3aed; --good:#10b981; --warn:#f59e0b; --bad:#ef4444; }
+    *{box-sizing:border-box}
+    body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans KR",sans-serif;background:var(--bg);color:var(--text);margin:0;display:flex;justify-content:center;align-items:center;min-height:100vh}
+    .card{background:var(--card);border-radius:20px;box-shadow:0 6px 24px rgba(0,0,0,.35);max-width:860px;width:100%;overflow:hidden;border:1px solid rgba(255,255,255,.08)}
+    .header{padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.12);display:flex;gap:10px;align-items:center;justify-content:space-between}
+    .title{font-weight:900;letter-spacing:.2px}
+    .actions{display:flex;gap:8px}
+    .iconbtn{border:1px solid rgba(255,255,255,.15);background:#0b1424;color:var(--text);border-radius:10px;padding:8px 10px;cursor:pointer}
+    .body{padding:20px}
+    .q{font-size:20px;font-weight:800;margin-bottom:12px}
+    .choice{display:block;width:100%;text-align:left;padding:12px 14px;margin-bottom:10px;background:#334155;border:none;border-radius:10px;color:#e5e7eb;cursor:pointer}
+    .choice.correct{outline:2px solid var(--good)}
+    .choice.wrong{outline:2px solid var(--bad)}
+    .progress{height:8px;background:#334155;border-radius:4px;overflow:hidden;margin-bottom:16px}
+    .progress span{display:block;height:100%;background:linear-gradient(90deg,var(--primary),var(--accent))}
+    .result{text-align:left}
+    .ending{padding:14px;margin-top:10px;border-radius:10px;background:#0b1526}
+    .ending.good{outline:2px solid var(--good)}
+    .ending.mid{outline:2px solid var(--warn)}
+    .ending.bad{outline:2px solid var(--bad)}
+    .ending h3{margin:0 0 8px 0}
+    .muted{color:var(--muted)}
+    .row{display:flex;gap:8px;flex-wrap:wrap}
+    button.btn{padding:10px 14px;margin:6px 0;border:none;border-radius:8px;cursor:pointer;background:#334155;color:#fff}
+    .talk{display:flex;gap:10px;align-items:flex-start;background:#0a1424;border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:12px}
+    .avatar{font-size:22px;line-height:1}
+    blockquote{margin:0;color:#e2e8f0}
+
+    /* 도움말 모달 */
+    .modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(2,6,23,.55);backdrop-filter:blur(3px);}
+    .modal.show{display:flex}
+    .modal .sheet{width:min(720px,92%);background:#0c1730;border:1px solid rgba(255,255,255,.12);border-radius:16px;padding:16px}
+    .modal h3{margin:0 0 6px 0}
+    .kbd{border:1px solid rgba(255,255,255,.2);padding:2px 6px;border-radius:6px;background:#0a1322}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <div class="title">⚓ 기욱 지식왕 퀴즈</div>
+      <div class="actions">
+        <button class="iconbtn" id="helpBtn">?</button>
+      </div>
+    </div>
+    <div class="body" id="view"></div>
+  </div>
+
+  <!-- 점수대별 음성 파일 경로 (프로젝트 루트에 audio 폴더 생성 후 파일 업로드)
+     파일명 예시: audio/voice_100.mp3, audio/voice_80.mp3, audio/voice_60.mp3, audio/voice_0.mp3 -->
+<!-- audio 폴더가 안 만들어질 때를 대비해: 루트 경로(./100.wav)도 자동 시도하도록 <source> 2개 넣음 -->
+<audio id="a100" preload="auto">
+  <source src="audio/100.wav" />
+  <source src="100.wav" />
+</audio>
+<audio id="a80" preload="auto">
+  <source src="audio/80.wav" />
+  <source src="80.wav" />
+</audio>
+<audio id="a60" preload="auto">
+  <source src="audio/60.wav" />
+  <source src="60.wav" />
+</audio>
+<audio id="a0" preload="auto">
+  <source src="audio/0.wav" />
+  <source src="0.wav" />
+</audio>
+
+  <!-- 도움말 모달 -->
+  <div class="modal" id="about">
+    <div class="sheet">
+      <h3>🎯 이 게임의 목적</h3>
+      <div class="muted" id="goalText"></div>
+      <h3 style="margin-top:10px">🚫 비목표</h3>
+      <ul class="muted" id="nongoals" style="margin:6px 0 0 18px"></ul>
+      <h3 style="margin-top:10px">🧠 (선택) AI 사용</h3>
+      <div class="muted">USE_AI=<span class="kbd" id="aiFlag">false</span> 일 때만, LORE 기반으로 1~2문장 멘트를 생성합니다.
+<br/>🎧 점수별 음성 넣기: 프로젝트 루트에 <code>audio</code> 폴더를 만들고 아래 파일을 업로드하세요.
+<br/>- <code>audio/100.wav</code> (100점)
+<br/>- <code>audio/80.wav</code>  (80~99점)
+<br/>- <code>audio/60.wav</code>  (60~79점)
+<br/>- <code>audio/0.wav</code>   (그 이하)</div>
+      <div class="row" style="justify-content:flex-end;margin-top:12px">
+        <button class="btn" id="closeAbout">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ======= CONFIG: 의도(목표)를 코드에 고정 =======
+    const CONFIG = {
+      goal: "기욱 퀴즈를 풀고, 점수에 따라 기욱이 직접 한 줄 멘트를 말해준다.",
+      nonGoals: ["장문 서사 엔딩", "로그인/서버", "지나친 효과음/애니메이션"],
+      USE_AI: false // true로 바꾸면 LORE 기반 짧은 멘트 생성(프록시 필요)
+    };
+
+    // (선택) AI용 LORE: 짧게 유지 (현재 게임은 AI OFF)
+    const LORE = {
+      world: "레무리아의 해신과 계약자 서사",
+      motifs: ["심장", "물고기 문양", "파도", "계약"],
+    };
+
+    // ======= 퀴즈 데이터 =======
+    const QUIZ = [
+      {q:"기욱은 주로 어떤 존재로 묘사되나요?",choices:["세발 자전거 선수","유명 화가의 보디가드","레무리아의 해신","발칙한 고양이"],answer:2,explain:"기욱은 레무리아의 해신이지."},
+      {q:"맹세,약속,계약과 관련된 증표나 문양을 상징하는 것은?",choices:["돌고래","물고기","갈매기","파도"],answer:1,explain:"계약의 증표로 왼쪽 가슴에 물고기 문양이 나타나."},
+      {q:"기욱의 생일은 언제일까?",choices:["1월 5일","2월 14일","3월 5일","3월 6일"],answer:3,explain:"기욱이 생일은 3월 6일이야."},
+      {q:"다음 중 기욱의 전투 음성 대사가 아닌 것은?",choices:["1번: 복수의 불꽃이 불타오르고 있어.","2번: 시간이 얼마나 있는지는 상관없어. 어떻게 쓰느냐가 중요하지.","3번: 드디어 바다 밖에서 숨을 쉴 수 있겠네.","4번: 녀석이 듣는 마지막 곡이 될 거야."],answer:1,explain:"2번은 LOL 에코 대사야."},
+      {q:"여주를 위해 기욱이 요리한 음식이 아닌 것은?",choices:["치킨","어니언링","야채죽","과일 에이드"],answer:0,explain:"치킨은 완벽한 저녁식사에서 기욱이 아닌 여주가 요리한 음식이야."}
+    ];
+
+    // ======= 점수별 한 줄 대사 =======
+    function conciseEnding(score,total){
+      const rate = Math.round((score/total)*100);
+      if(rate===100){
+        return { cls:'good', title:'레무리아의 계약자', line:'나에 대해 이렇게 잘 아는 사람은 처음이야. 아무래도… 내가 찾던 계약자가 맞는 것 같군.' };
+      }
+      if(rate>=80){
+        return { cls:'good', title:'행복한 연인', line:'대부분 맞히다니, 꽤 인상적이야. 너랑 있으면 꽤 즐거울 것 같아.' };
+      }
+      if(rate>=60){
+        return { cls:'mid', title:'기욱의 절친', line:'나를 잘 알긴 하는데, 몇 개는 놓쳤네. 그래도 친구로 지내기엔 충분하지.' };
+      }
+      return { cls:'bad', title:'초보 기욱 탐험가', line:'아직 나에 대해 모르는 게 많구나. 천천히 알아가도 괜찮아.' };
+    }
+
+    // ======= 엔진 =======
+    const view = document.getElementById('view');
+    const status = document.getElementById('status');
+    let idx=0, score=0, locked=false;
+    const history=[]; // {q, pick, correct}
+
+    function renderStart(){
+      status.textContent='준비 완료';
+      view.innerHTML=`<div style="text-align:center">
+        <h2>⚓ 기욱 지식왕 퀴즈</h2>
+        <p class="muted">선택지를 골라 기욱 지식을 증명해봐! 마지막에 점수에 따라 기욱이 직접 한 줄로 말해줘.</p>
+        <div class="row" style="justify-content:center">
+          <button class="btn" onclick="start()">시작하기</button>
+        </div>
+      </div>`;
+    }
+
+    function start(){ idx=0; score=0; locked=false; history.length=0; renderQuiz(); }
+
+    function renderQuiz(){
+      locked=false;
+      const total=QUIZ.length; const cur=QUIZ[idx];
+      status.textContent=`문제 ${idx+1} / ${total}`;
+      view.innerHTML=`<div class="progress"><span style="width:${(idx/total)*100}%"></span></div>
+        <div class="q">${cur.q}</div>`;
+      cur.choices.forEach((c,i)=>{
+        const btn=document.createElement('button');
+        btn.className='choice';
+        btn.textContent=c;
+        btn.onclick=()=>pick(i);
+        view.appendChild(btn);
+      });
+    }
+
+    function pick(i){
+      if(locked) return; locked=true;
+      const cur=QUIZ[idx];
+      const nodes=[...document.querySelectorAll('.choice')];
+      nodes.forEach((n,k)=>{ if(k===cur.answer)n.classList.add('correct'); if(k===i&&i!==cur.answer)n.classList.add('wrong'); n.disabled=true; });
+      const ok = i===cur.answer;
+      if(ok) score++;
+      history.push({q:cur.q, pick:cur.choices[i], correct: ok});
+      setTimeout(()=>{ if(cur.explain) alert((ok?'정답! ':'오답! ')+cur.explain); next(); }, 300);
+    }
+
+    function next(){ idx++; if(idx>=QUIZ.length) return renderResult(); renderQuiz(); }
+
+    function renderResult(){
+      status.textContent='결과';
+      const {cls,title,line} = conciseEnding(score, QUIZ.length);
+      view.innerHTML = `
+        <div class="result">
+          <h2>결과</h2>
+          <div class="ending ${cls}">
+            <h3>${title}</h3>
+            <div class="talk"><div class="avatar">🧑‍🎨</div><blockquote>"${line}"</blockquote></div>
+            <div class="muted" style="margin-top:8px">정답: ${score} / ${QUIZ.length}</div>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <button class="btn" onclick="renderStart()">다시하기</button>
+            <button class="btn" onclick="copyLink()">링크 복사</button>
+          </div>
+          <details>
+            <summary class="muted">내 선택 기록 보기</summary>
+            <div class="muted" style="margin-top:6px">${history.map((h,i)=>`Q${i+1}. ${h.q}\n- 내가 고른 답: ${h.pick} (${h.correct? '정답':'오답'})`).join('\n\n')}</div>
+          </details>
+        </div>`;
+
+      // (선택) 점수대별 음성 재생 — 오디오 태그 주석 해제 시 동작
+      const rate = Math.round((score/QUIZ.length)*100);
+      let audioId = 'a0';
+      if(rate===100) audioId='a100'; else if(rate>=80) audioId='a80'; else if(rate>=60) audioId='a60';
+      const el = document.getElementById(audioId);
+      if(el){ el.currentTime=0; el.play().catch(()=>{}); }
+    }
+
+    function copyLink(){
+      navigator.clipboard.writeText(location.href).then(()=>{
+        alert('페이지 주소를 복사했어! 친구에게 공유해봐');
+      });
+    }
+
+    // 도움말 모달 토글
+    const about = document.getElementById('about');
+    document.getElementById('helpBtn').onclick = ()=>{ 
+      document.getElementById('goalText').textContent = CONFIG.goal; 
+      document.getElementById('aiFlag').textContent = CONFIG.USE_AI; 
+      const ul = document.getElementById('nongoals');
+      ul.innerHTML = CONFIG.nonGoals.map(x=>`<li>${x}</li>`).join('');
+      about.classList.add('show'); 
+    };
+    document.getElementById('closeAbout').onclick = ()=> about.classList.remove('show');
+
+    // 초기 렌더
+    renderStart();
+  </script>
+</body>
+</html>
